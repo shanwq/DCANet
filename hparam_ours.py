@@ -45,7 +45,7 @@ class hparams:
     r1_lambda = 0.5
 
     output_int_dir = './pred'
-    # output_float_dir = '/memory/shanwenqi/Vessel_seg/IXI_MRA/45_cases/ExperiResult/seed_3047/TransU_Mip_15slice_3scale_coef4v1/pred'
+    # output_float_dir = '/pred'
 
     init_type = 'xavier' # ['normal', 'xavier', 'xavier_uniform', 'kaiming', 'orthogonal', 'none]
     cost_weight = [2.0, 5.0, 5.0]
