@@ -267,7 +267,15 @@ def train():
                             shuffle=True,
                             pin_memory=True,
                             drop_last=True)
-    
+    # val_dataset = MedData_val(source_val_dir, label_val_dir, mip_img_val_dir, mip_lbl_val_dir, patch_size)  # Replace with your validation dataset
+    # val_loader = DataLoader(val_dataset.queue_dataset,
+    #                         batch_size=1,
+    #                         num_workers=8,
+    #                         shuffle=False,  # No shuffling for validation
+    #                         pin_memory=True,
+    #                         drop_last=False)  # Keep all validation samples
+    # best_val_loss = float('inf')  # Initialize best validation loss
+    # best_val_epoch = 0  # Track epoch with best validation loss
     model.train()
 
     epochs = args.epochs - elapsed_epochs
@@ -332,7 +340,66 @@ def train():
             # writer.add_scalar('Training/dice', dice,iteration)
             torch.cuda.empty_cache()
             
-
+        # # Added for validation: Validation loop
+        # model.eval()  # Set model to evaluation mode
+        # val_loss, val_loss_3d, val_loss_mip = 0.0, 0.0, 0.0
+        # val_batches = 0
+    
+        # with torch.no_grad():  # Disable gradient computation for validation
+        #     for batch in val_loader:
+        #         if (hp.in_class == 1) and (hp.out_class == 1):
+        #             x = batch['source']['data']
+        #             y = batch['label']['data']
+        #             mip_img = batch['mip_img']['data']
+        #             mip_lbl = batch['mip_lbl']['data']
+                    
+        #             x = torch.transpose(x, 2, 4)
+        #             y = torch.transpose(y, 2, 4)
+        #             mip_img = torch.transpose(mip_img, 2, 4)
+        #             mip_lbl = torch.transpose(mip_lbl, 2, 4)
+    
+        #             y = y.type(torch.FloatTensor).cuda()
+        #             x = x.type(torch.FloatTensor).cuda()
+        #             mip_img = mip_img.type(torch.FloatTensor).cuda()
+        #             mip_lbl = mip_lbl.type(torch.FloatTensor).cuda()
+    
+        #         pred_mip, outputs = model(x, mip_img)
+                
+        #         # Compute validation losses
+        #         loss_3d = compute_loss(outputs, y, is_max, is_c2f, is_sigmoid, is_max_hungarian, is_max_ds, point_rend, num_point_rend, no_object_weight)
+        #         loss_mip = dice_loss(pred_mip, mip_lbl)
+        #         loss = 0.2 * loss_mip + loss_3d
+    
+        #         val_loss += loss.item()
+        #         val_loss_3d += loss_3d.item()
+        #         val_loss_mip += loss_mip.item()
+        #         val_batches += 1
+    
+        # # Compute average validation losses
+        # val_loss /= val_batches
+        # val_loss_3d /= val_batches
+        # val_loss_mip /= val_batches
+    
+        # # Log validation metrics
+        # writer.add_scalar('Validation/Loss', val_loss, epoch)
+        # writer.add_scalar('Validation/Loss_3d', val_loss_3d, epoch)
+        # writer.add_scalar('Validation/Loss_mip', val_loss_mip, epoch)
+        # print(f'Epoch {epoch}, Validation Loss: {val_loss:.6f}, Loss_3d: {val_loss_3d:.6f}, Loss_mip: {val_loss_mip:.6f}')
+        # if val_loss < best_val_loss:
+        #     best_val_loss = val_loss
+        #     best_val_epoch = epoch
+        #     torch.save(
+        #         {
+        #             "model": model.state_dict(),
+        #             "optim": optimizer.state_dict(),
+        #             "scheduler": scheduler.state_dict(),
+        #             "epoch": epoch,
+        #             "best_val_loss": best_val_loss,
+        #         },
+        #         os.path.join(args.output_dir, "best_checkpoint.pt"),
+        #     )
+        #     print(f'Saved best model at epoch {epoch} with validation loss: {val_loss:.6f}')
+        
         scheduler.step()
 
 
@@ -343,7 +410,6 @@ def train():
                 "optim": optimizer.state_dict(),
                 "scheduler":scheduler.state_dict(),
                 "epoch": epoch,
-
             },
             os.path.join(args.output_dir, args.latest_checkpoint_file),
         )
