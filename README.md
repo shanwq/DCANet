@@ -11,11 +11,11 @@
 
 ## Notice
 * You can modify **hparam.py** to determine hyper-parameters.
-
+* Regional_MIP_generation is in the **utils** folder
 
 
 ## By The Way
 This project is not perfect and there are still many problems. If there is some feedback, start an issue.
 
 ## Acknowledgements
-This repository is an PyTorch implementation of DCANet for brain vessel segmentation.
+This repository is an PyTorch implementation of DCANet for TOF-MRA segmentation.
