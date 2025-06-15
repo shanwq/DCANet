@@ -228,12 +228,12 @@ def train():
     model.apply(weights_init_normal)
 
     para = list(model.parameters())#+list(model_inv.parameters())
-    optimizer = torch.optim.AdamW(para, lr=0.0003, weight_decay=3e-05) # 0.0003
+    optimizer = torch.optim.AdamW(para, lr=0.0001, weight_decay=1e-04) # 0.0003
 
     # scheduler = ReduceLROnPlateau(optimizer, 'min',factor=0.5, patience=20, verbose=True)
     # scheduler = StepLR(optimizer, step_size=30, gamma=0.8)
     # scheduler = CosineAnnealingLR(optimizer, T_max=50, eta_min=5e-6)
-    scheduler = LinearWarmupCosineAnnealingLR(optimizer, warmup_epochs= 50, max_epochs= hp.total_epochs, warmup_start_lr=0.000003, eta_min= 0)
+    scheduler = LinearWarmupCosineAnnealingLR(optimizer, warmup_epochs= 50, max_epochs= hp.total_epochs, warmup_start_lr=0.000001, eta_min= 1e-7)
     
     if args.ckpt is not None:
         print("load model:", args.ckpt)
