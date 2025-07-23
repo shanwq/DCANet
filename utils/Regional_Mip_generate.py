@@ -10,13 +10,13 @@ def mip_generate(n_slice):
     n_slice = n_slice
     img_path = ''
     lbl_path = ''
-    mip_img_16slice_path = ''
-    mip_lbl_16slice_path = ''
-    mip_arg_16slice_path = ''
+    mip_img_15slice_path = ''
+    mip_lbl_15slice_path = ''
+    mip_arg_15slice_path = ''
 
-    os.makedirs(mip_img_16slice_path, exist_ok=True)
-    os.makedirs(mip_lbl_16slice_path, exist_ok=True)
-    os.makedirs(mip_arg_16slice_path, exist_ok=True)
+    os.makedirs(mip_img_15slice_path, exist_ok=True)
+    os.makedirs(mip_lbl_15slice_path, exist_ok=True)
+    os.makedirs(mip_arg_15slice_path, exist_ok=True)
     
     for img_name in os.listdir(img_path):
         
@@ -77,9 +77,9 @@ def mip_generate(n_slice):
         mip_lbl.CopyInformation(img)
         mip_arg.CopyInformation(img)
             
-        sitk.WriteImage(mip_img, os.path.join(mip_img_16slice_path, img_name))#'%s'%(img_name[:-7]) + 'img_slice_%s.nii.gz'%n_))
-        sitk.WriteImage(mip_lbl, os.path.join(mip_lbl_16slice_path, img_name))#'%s'%(img_name[:-7]) + 'lbl_slice_%s.nii.gz'%kk))
-        sitk.WriteImage(mip_arg, os.path.join(mip_arg_16slice_path, img_name))#'%s'%(img_name[:-7]) + 'lbl_slice_%s.nii.gz'%kk))
+        sitk.WriteImage(mip_img, os.path.join(mip_img_15slice_path, img_name))#'%s'%(img_name[:-7]) + 'img_slice_%s.nii.gz'%n_))
+        sitk.WriteImage(mip_lbl, os.path.join(mip_lbl_15slice_path, img_name))#'%s'%(img_name[:-7]) + 'lbl_slice_%s.nii.gz'%kk))
+        sitk.WriteImage(mip_arg, os.path.join(mip_arg_15slice_path, img_name))#'%s'%(img_name[:-7]) + 'lbl_slice_%s.nii.gz'%kk))
 
 if __name__ =='__main__':
     n_slice = 15 # projection depth / spacing
