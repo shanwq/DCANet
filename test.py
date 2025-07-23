@@ -84,18 +84,12 @@ source_test_dir = hp.source_test_dir
 mip_img_test_dir = hp.mip_img_test_dir
 # save path for predictions
 output_int_dir = hp.output_int_dir
+patch_size = 128, 128, 128
 
 hpparams_dict = {key: value for key, value in hp.__dict__.items() if not key.startswith('__') and not callable(key)}
 
 from models.three_d.DCANet_3scale_MIFB_DSGFormer import DCANet
 model = DCANet()#input_channels=hp.in_class, out_channels=hp.out_class, init_features=8)#, base_n_filter=2)  #2
-
-
-patch_size = hp.patch_size,hp.patch_size,hp.patch_size
-patch_size = 128, 128, 128
-# patch_overlap = 76, 76, 76 # overlap_rate = 0.6
-# patch_overlap = 4,4,4
-
 
 print(hpparams_dict)
 os.makedirs(hp.output_dir, exist_ok=True)
@@ -156,7 +150,6 @@ def _compute_steps_for_sliding_window(patch_size: Tuple[int, ...],
             actual_step_size = 99999999999  # does not matter because there is only one step at 0
 
         steps_here = [int(np.round(actual_step_size * i)) for i in range(num_steps[dim])]
-
         steps.append(steps_here)
 
     return steps
@@ -173,9 +166,7 @@ def predict(arr, mip_arr):
 
     step_size = 0.6
     steps = _compute_steps_for_sliding_window(patch_size, raw_norm.shape[-3:], step_size) 
-    
     num_tiles = len(steps[0]) * len(steps[1]) * len(steps[2])
-    
 
     kk=0
     # patch-based prediction
