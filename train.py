@@ -1,10 +1,8 @@
 import os
-
 import random
 import time
 import argparse
 import numpy as np
-from PIL import Image
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -15,33 +13,13 @@ import math
 import torchio
 import torch.nn.functional as F
 import SimpleITK as sitk
-
 from copy import deepcopy
 from torch import nn
 from torch.cuda.amp import autocast
 from scipy.optimize import linear_sum_assignment
-
-from torchio.transforms import (
-    RandomFlip,
-    RandomAffine,
-    RandomElasticDeformation,
-    RandomNoise,
-    RandomMotion,
-    RandomBiasField,
-    RescaleIntensity,
-    Resample,
-    ToCanonical,
-    ZNormalization,
-    CropOrPad,
-    HistogramStandardization,
-    OneOf,
-    Compose,
-)
-# from medpy.io import load,save
 from tqdm import tqdm
 from torchvision import utils
-# from hparam import hparams as hp
-from hparam_ours import hparams as hp
+from hparam import hparams as hp
 from torch.optim.lr_scheduler import ReduceLROnPlateau,StepLR,CosineAnnealingLR
 import json
 from optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
@@ -49,7 +27,7 @@ from optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
 random.seed(3047)
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
 def weights_init_normal(m):
     classname = m.__class__.__name__
@@ -79,17 +57,11 @@ def weights_init_normal(m):
         if hasattr(m, 'bias') and m.bias is not None:
             torch.nn.init.constant_(m.bias.data, 0.0)
 
+# define the MRA and MIP image/label paths for training
 source_train_dir = hp.source_train_dir
 label_train_dir = hp.label_train_dir
 mip_img_train_dir = hp.mip_img_train_dir
 mip_lbl_train_dir = hp.mip_lbl_train_dir
-
-
-source_test_dir = hp.source_test_dir
-label_test_dir = hp.label_test_dir
-
-output_int_dir = hp.output_int_dir
-output_float_dir = hp.output_float_dir
 patch_size = hp.patch_size
 
 hpparams_dict = {key: value for key, value in hp.__dict__.items() if not key.startswith('__') and not callable(key)}
@@ -97,14 +69,12 @@ hpparams_dict = {key: value for key, value in hp.__dict__.items() if not key.sta
 print(hpparams_dict)
 os.makedirs(hp.output_dir, exist_ok=True)
 
+# Put the training settings into the .json file
 with open(hp.output_dir+'/experimental_settings_train.json', 'w', encoding='utf-8') as file:
     json.dump(hpparams_dict, file, ensure_ascii=False, indent=4)
 
-
 def parse_training_args(parser):
     """	
-    """
-
     parser.add_argument('-o', '--output_dir', type=str, default=hp.output_dir, required=False, help='Directory to save checkpoints')
     parser.add_argument('--latest_checkpoint_file', type=str, default='checkpoint_latest.pt', help='Store the latest checkpoint in each epoch')
 
@@ -145,11 +115,9 @@ def parse_training_args(parser):
     training.add_argument('--cudnn-benchmark', default=True, help='Run cudnn benchmark')
     training.add_argument('--disable-uniform-initialize-bn-weight', action='store_true', help='disable uniform initialization of batchnorm layer weight')
 
-
     return parser
 
-
-
+# The loss computation based on the Hungarian Matching function
 def compute_loss(output, target, is_max=True, is_c2f=False, is_sigmoid=True, is_max_hungarian=True, is_max_ds=True, point_rend=False, num_point_rend=None, no_object_weight=None):
     total_loss, smooth, do_fg = None, 1e-5, False
     
@@ -171,7 +139,7 @@ def compute_loss(output, target, is_max=True, is_c2f=False, is_sigmoid=True, is_
             target_label = torch.nonzero(target_sum[b] > 0).squeeze(1) # (K)
             targets.append({'labels':target_label, 'masks':target_mask})
         from loss_function import HungarianMatcher3D, compute_loss_hungarian
-        cost_weight = [2.0, 5.0, 5.0]
+        cost_weight = [2.0, 5.0, 5.0]  # hyperparameters 
         matcher = HungarianMatcher3D(
                 cost_class=cost_weight[0], # 2.0
                 cost_mask=cost_weight[1],
@@ -187,17 +155,15 @@ def compute_loss(output, target, is_max=True, is_c2f=False, is_sigmoid=True, is_
                 loss_list.append(max_ds_loss_weights[i+1] *loss_aux)
         total_loss = (loss_list[0] + sum(loss_list[1:])/len(loss_list[1:])) / 2
 
-        # quit()
         return total_loss
 
+# The Dice loss function
 def dice_loss(score, target):
     target = target.float()
     smooth = 1e-5
     intersect = torch.sum(score * target)
-    # print('intersect', torch.sum(intersect))
     y_sum = torch.sum(target)
     z_sum = torch.sum(score)
-    # print('y_sum, z_sum', torch.sum(y_sum), torch.sum(z_sum))
     loss = (2 * intersect + smooth) / (z_sum + y_sum + smooth)
     loss = 1 - loss
     return loss
@@ -217,14 +183,13 @@ def train():
     torch.backends.cudnn.enabled = args.cudnn_enabled
     torch.backends.cudnn.benchmark = args.cudnn_benchmark
 
-    # from weights_init.weight_init_normal import 
-
     from data_function_mip import MedData_train
     os.makedirs(args.output_dir, exist_ok=True)
     if hp.mode == '3d':
         from models.three_d.DCANet_3scale_MIFB_DSGFormer import DCANet
         model = DCANet()#input_channels=hp.in_class, out_channels=hp.out_class, init_features=8)#, base_n_filter=2)  #2
-
+    
+    # weight initialization
     model.apply(weights_init_normal)
 
     para = list(model.parameters())#+list(model_inv.parameters())
@@ -234,14 +199,15 @@ def train():
     # scheduler = StepLR(optimizer, step_size=30, gamma=0.8)
     # scheduler = CosineAnnealingLR(optimizer, T_max=50, eta_min=5e-6)
     scheduler = LinearWarmupCosineAnnealingLR(optimizer, warmup_epochs= 50, max_epochs= hp.total_epochs, warmup_start_lr=0.000001, eta_min= 1e-7)
-    
+
+    # Load the pre-trained checkpoint
     if args.ckpt is not None:
         print("load model:", args.ckpt)
         print(hp.ckpt_dir)
         # print(os.path.join(args.output_dir, args.latest_checkpoint_file))
         ckpt = torch.load(hp.ckpt_dir, map_location=lambda storage, loc: storage)
         model.load_state_dict(ckpt["model"], strict=False)
-        # optimizer.load_state_dict(ckpt["optim"])
+        optimizer.load_state_dict(ckpt["optim"])
 
         # for state in optimizer.state.values():
         #     for k, v in state.items():
@@ -249,8 +215,7 @@ def train():
         #             state[k] = v.cuda()
 
         scheduler.load_state_dict(ckpt["scheduler"])
-        # elapsed_epochs = ckpt["epoch"]
-        elapsed_epochs = 0
+        elapsed_epochs = ckpt["epoch"]
     else:
         elapsed_epochs = 0
 
@@ -259,7 +224,6 @@ def train():
     writer = SummaryWriter(args.output_dir)
     print(source_train_dir, label_train_dir)
     
-    # quit()
     train_dataset = MedData_train(source_train_dir,label_train_dir, mip_img_train_dir, mip_lbl_train_dir, patch_size)
     train_loader = DataLoader(train_dataset.queue_dataset, 
                             batch_size=1,
@@ -267,30 +231,27 @@ def train():
                             shuffle=True,
                             pin_memory=True,
                             drop_last=True)
-    # val_dataset = MedData_val(source_val_dir, label_val_dir, mip_img_val_dir, mip_lbl_val_dir, patch_size)  # Replace with your validation dataset
-    # val_loader = DataLoader(val_dataset.queue_dataset,
-    #                         batch_size=1,
-    #                         num_workers=8,
-    #                         shuffle=False,  # No shuffling for validation
-    #                         pin_memory=True,
-    #                         drop_last=False)  # Keep all validation samples
-    # best_val_loss = float('inf')  # Initialize best validation loss
-    # best_val_epoch = 0  # Track epoch with best validation loss
+    val_dataset = MedData_val(source_val_dir, label_val_dir, mip_img_val_dir, mip_lbl_val_dir, patch_size)  # Replace with your validation dataset
+    val_loader = DataLoader(val_dataset.queue_dataset,
+                            batch_size=1,
+                            num_workers=8,
+                            shuffle=False,  # No shuffling for validation
+                            pin_memory=True,
+                            drop_last=False)  # Keep all validation samples
+    best_val_loss = float('inf')  # Initialize best validation loss
+    best_val_epoch = 0  # Track epoch with best validation loss
     model.train()
 
     epochs = args.epochs - elapsed_epochs
     iteration = elapsed_epochs * len(train_loader)
-
-
     print(args.output_dir)
     torch.cuda.empty_cache()
-    # quit()
+    
     for epoch in range(1, epochs + 1):
         epoch += elapsed_epochs
 
         for i, batch in enumerate(train_loader):
             t_start=time.time()
-            # quit()
             optimizer.zero_grad()
 
             if (hp.in_class == 1) and (hp.out_class == 1) :
@@ -309,7 +270,6 @@ def train():
                 mip_img = mip_img.type(torch.FloatTensor).cuda()
                 mip_lbl = mip_lbl.type(torch.FloatTensor).cuda()
 
-
             pred_mip, outputs = model(x, mip_img)
             
             is_max, is_c2f, is_sigmoid, is_max_hungarian = True, False, True, True
@@ -320,8 +280,6 @@ def train():
             loss = 0.2*loss_mip + loss_3d
             print(f'Batch: {i}/{len(train_loader)} epoch {epoch}, loss:{loss:06f}, loss_3d:{loss_3d:06f}, miploss:{loss_mip:06f}, lr:{scheduler._last_lr[0]}, time:{time.time()-t_start}')
 
-            # ########################################################################################################################
-            
             ##########################################################################################################################
             # num_iters += 1
             loss.backward()
@@ -334,9 +292,6 @@ def train():
             writer.add_scalar('Training/Loss_3d', loss_3d.item(),iteration)
             writer.add_scalar('Training/Loss_mip', loss_mip.item(),iteration)
             writer.add_scalar('Training/lr', scheduler._last_lr[0],iteration)
-            
-            # writer.add_scalar('Training/false_positive_rate', false_positive_rate,iteration)
-            # writer.add_scalar('Training/false_negtive_rate', false_negtive_rate,iteration)
             # writer.add_scalar('Training/dice', dice,iteration)
             torch.cuda.empty_cache()
             
@@ -413,7 +368,6 @@ def train():
             },
             os.path.join(args.output_dir, args.latest_checkpoint_file),
         )
-
         print(os.path.join(args.output_dir, f"checkpoint_{epoch:04d}.pt"))
 
 
@@ -435,7 +389,4 @@ def train():
 
 
 if __name__ == '__main__':
-    if hp.train_or_test == 'train':
-        train()
-    # elif hp.train_or_test == 'test':
-        # test()
+    train()
