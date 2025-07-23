@@ -4,7 +4,7 @@
 * PyTorch : 1.11.0
 * torchio : 0.18.92
 * python : 3.7.0
-* 
+
 * The IXI-HH dataset is availabel at https://drive.google.com/drive/folders/16pBJAem8zfRcFqLhIxNFSlsZNa0r1UPF or https://www.dropbox.com/scl/fo/6urgp6evks6x1rsg7ck89/ABZA0sfyyGKQr2Y33Qb916Y?rlkey=9txipxphrfm75kusc8oe7s4km&st=szxf713v&dl=0
 
 ## DCANet Training:
