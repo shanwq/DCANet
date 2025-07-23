@@ -19,27 +19,9 @@ from glob import glob
 import SimpleITK as sitk
 from typing import Tuple, List
 
-from torchio.transforms import (
-    RandomFlip,
-    RandomAffine,
-    RandomElasticDeformation,
-    RandomNoise,
-    RandomMotion,
-    RandomBiasField,
-    RescaleIntensity,
-    Resample,
-    ToCanonical,
-    ZNormalization,
-    CropOrPad,
-    HistogramStandardization,
-    OneOf,
-    Compose,
-)
-# from medpy.io import load,save
 from tqdm import tqdm
 from torchvision import utils
-# from hparam import hparams as hp
-from hparam_ours import hparams as hp
+from hparam import hparams as hp
 from torch.optim.lr_scheduler import ReduceLROnPlateau,StepLR,CosineAnnealingLR
 
 from optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
@@ -251,13 +233,10 @@ def test():
     parser = argparse.ArgumentParser(description='PyTorch Medical Segmentation Testing')
     parser = parse_training_args(parser)
     args, _ = parser.parse_known_args()
-
     args = parser.parse_args()
-
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.enabled = args.cudnn_enabled
     torch.backends.cudnn.benchmark = args.cudnn_benchmark
-    
     
     ckpt = torch.load(os.path.join(args.output_dir, args.ckpt_dir), map_location=lambda storage, loc: storage)
     model.cuda()
@@ -271,7 +250,6 @@ def test():
 
     for i, (raw_img_path, mip_path) in enumerate(tqdm(zip(raw_data_dir_list, raw_mip_dir_list))):
         print(output_int_dir + raw_img_path.split('/')[-1])
-        # quit()
         if os.path.exists(output_int_dir + raw_img_path.split('/')[-1]):
             continue
         Inference3D(raw_img_path, mip_path, output_int_dir_new)
