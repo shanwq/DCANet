@@ -36,9 +36,7 @@ class hparams:
     mip_lbl_train_dir = './train/mip_lbl'
     
     source_test_dir = './test/img'
-    label_test_dir = './test/lbl'
     mip_img_test_dir = './test/mip_img'
-    mip_lbl_test_dir = './test/mip_lbl'
  
  
     grad_clip = 0.3
