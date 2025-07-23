@@ -1,16 +1,12 @@
 import os
-
-
 import time
 import argparse
 import numpy as np
-from PIL import Image
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torch import nn
 from torchvision import transforms
-import torch.distributed as dist
 import math
 import torchio
 import torch.nn.functional as F
@@ -80,66 +76,51 @@ def weights_init_normal(m):
             torch.nn.init.constant_(m.bias.data, 0.0)
 
 
-
+# MRA paths
 source_train_dir = hp.source_train_dir
 label_train_dir = hp.label_train_dir
-
-
+# MIP paths
 source_test_dir = hp.source_test_dir
-label_test_dir = hp.label_test_dir
 mip_img_test_dir = hp.mip_img_test_dir
-mip_lbl_test_dir = hp.mip_lbl_test_dir
-
-
+# save path for predictions
 output_int_dir = hp.output_int_dir
-output_float_dir = hp.output_float_dir
-
-patch_size = 64, 128, 128
 
 hpparams_dict = {key: value for key, value in hp.__dict__.items() if not key.startswith('__') and not callable(key)}
 
 from models.three_d.DCANet_3scale_MIFB_DSGFormer import DCANet
 model = DCANet()#input_channels=hp.in_class, out_channels=hp.out_class, init_features=8)#, base_n_filter=2)  #2
 
-from models.three_d.unet3d import UNet3D
-model_inv = UNet3D(in_channels=hp.in_class, out_channels=hp.out_class, init_features=4)#, base_n_filter=2)  #2
 
-patch_overlap = 4,4,4
 patch_size = hp.patch_size,hp.patch_size,hp.patch_size
-patch_size = 64, 192, 192
+patch_size = 128, 128, 128
+# patch_overlap = 76, 76, 76 # overlap_rate = 0.6
+# patch_overlap = 4,4,4
 
 
 print(hpparams_dict)
 os.makedirs(hp.output_dir, exist_ok=True)
-
+# Put the hpparams_dict in the .json file
 with open(hp.output_dir+'/experimental_settings_test.json', 'w', encoding='utf-8') as file:
     json.dump(hpparams_dict, file, ensure_ascii=False, indent=4)
 
 def parse_training_args(parser):
     """	
     """
-
     parser.add_argument('-o', '--output_dir', type=str, default=hp.output_dir, required=False, help='Directory to save checkpoints')
     parser.add_argument('--latest_checkpoint_file', type=str, default='checkpoint_latest.pt', help='Store the latest checkpoint in each epoch')
-
     # training
     training = parser.add_argument_group('training setup') 
-
-    training.add_argument('--epochs', type=int, default=125, help='Number of total epochs to run')   
     training.add_argument('--epochs_per_checkpoint', type=int, default=1, help='Number of epochs per checkpoint')
     training.add_argument('--batch', type=int, default=1, help='batch-size')     #12
     training.add_argument('--sample', type=int, default=12, help='number of samples during training')    #12
 
     parser.add_argument(
         '-k',
-        "--ckpt",
+        "--ckpt_dir",
         type=str,
         default=None,
         help="path to the checkpoints to resume training",
     )
-
-    parser.add_argument("--init-lr", type=float, default=0.005, help="learning rate")   #0.001
-
     parser.add_argument(
         "--wandb", action="store_true", help="use weights and biases logging"
     )
@@ -155,10 +136,11 @@ def parse_training_args(parser):
 
     return parser
 
-
 def _compute_steps_for_sliding_window(patch_size: Tuple[int, ...],
                                       image_size: Tuple[int, ...],
                                       step_size: float) -> List[List[int]]:
+    # compute how many windows needed for testing the volume
+                                          
     assert [i >= j for i, j in zip(image_size, patch_size)], "image size must be as large or larger than patch_size"
     assert 0 < step_size <= 1, 'step_size must be larger than 0 and smaller or equal to 1'
     target_step_sizes_in_voxels = [i * step_size for i in patch_size]
@@ -182,26 +164,21 @@ def _compute_steps_for_sliding_window(patch_size: Tuple[int, ...],
 def predict(arr, mip_arr):
 
     prob_map = torch.zeros((1, 2,) + arr.shape[-3:]).half().cuda()
-
     cnt_map = torch.zeros_like(prob_map)
-
     arr_clip = np.clip(arr, -9999, 9999)
     mip_arr_clip = np.clip(mip_arr, -9999, 9999)
-    # arr_clip_2 = np.clip(arr, 9999, 9999)
-    # print(np.array_equal(arr_clip, arr_clip_2))
-    # print(np.unique(arr_clip), np.unique(arr_clip_2))
     # Normalization norm and mean
     raw_norm = (arr_clip - arr_clip.mean()) / (arr_clip.std()+ 1e-8)
     raw_mip_norm = (mip_arr_clip - mip_arr_clip.mean()) / (mip_arr_clip.std()+ 1e-8)
 
-    step_size = 0.7
-    steps = _compute_steps_for_sliding_window(patch_size, raw_norm.shape[-3:], step_size) # step_size=0.5 for Brats
+    step_size = 0.6
+    steps = _compute_steps_for_sliding_window(patch_size, raw_norm.shape[-3:], step_size) 
     
     num_tiles = len(steps[0]) * len(steps[1]) * len(steps[2])
     
 
     kk=0
-    
+    # patch-based prediction
     for x in steps[0]:
         lb_x = x
         ub_x = x + patch_size[0]
@@ -215,11 +192,6 @@ def predict(arr, mip_arr):
                     numpy_arr = raw_norm[:, lb_x:ub_x, lb_y:ub_y, lb_z:ub_z][np.newaxis] if len(raw_norm.shape)==4 else raw_norm[lb_x:ub_x, lb_y:ub_y, lb_z:ub_z][np.newaxis, np.newaxis]
                     numpy_mip_arr = raw_mip_norm[:, lb_x:ub_x, lb_y:ub_y, lb_z:ub_z][np.newaxis] if len(raw_mip_norm.shape)==4 else raw_mip_norm[lb_x:ub_x, lb_y:ub_y, lb_z:ub_z][np.newaxis, np.newaxis]
                     
-                    # print('numpy_arr', numpy_arr.shape)
-                    
-                    # mip_img, mip_index = torch.max(torch.from_numpy(numpy_arr), 2)
-                    # mip_img = numpy_mip_arr.type(torch.FloatTensor).cuda()
-                    
                     tensor_arr = torch.from_numpy(numpy_arr).cuda()
                     mip_img = torch.from_numpy(numpy_mip_arr).cuda()
                     pred_mip, seg_pro = model(tensor_arr, mip_img) # (1, c, d, h, w)
@@ -229,7 +201,6 @@ def predict(arr, mip_arr):
                     mask_pred = mask_pred.sigmoid()
                     seg_pro = torch.einsum("bqc,bqdhw->bcdhw", mask_cls, mask_pred)
                     _pred = seg_pro
-
 
                     prob_map[:, :, lb_x:ub_x, lb_y:ub_y, lb_z:ub_z] += _pred
                     # NOTE: should also smooth cnt_map if apply gaussian_mask before |  neural_network.py -> network.predict_3D -> _internal_predict_3D_3Dconv_tiled
@@ -242,6 +213,9 @@ def predict(arr, mip_arr):
 
 
 def Inference3D(input_img_path, mip_path, save_path=None):
+    '''
+    read, inference and save the prediction results for the test case.
+    '''
     sitk_raw = sitk.ReadImage(input_img_path)
     arr_raw = sitk.GetArrayFromImage(sitk_raw)
     sitk_mip = sitk.ReadImage(mip_path)
@@ -257,7 +231,6 @@ def Inference3D(input_img_path, mip_path, save_path=None):
     with torch.no_grad():
         prob_map = predict(arr_raw, arr_mip) #torch.Size([1, 2, 92, 1024, 1024])
 
-    # del arr_raw
 
     prob_map_interp = np.zeros(list(prob_map.size()[:2]) + list(sitk_raw.GetSize()[::-1]), dtype=np.float16)
     for i in range(prob_map.size(1)):
@@ -270,7 +243,6 @@ def Inference3D(input_img_path, mip_path, save_path=None):
     
     save_dir = save_path +input_img_path.split('/')[-1]
     os.makedirs(save_path, exist_ok = True)
-    # print('output',np.unique(segmentation), segmentation.size())
     del prob_map_interp
     # segmentation = np.swapaxes(segmentation, 0,2)
     pred_sitk = sitk.GetImageFromArray(segmentation.astype(np.int8))
@@ -291,14 +263,12 @@ def test():
 
     args = parser.parse_args()
 
-
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.enabled = args.cudnn_enabled
     torch.backends.cudnn.benchmark = args.cudnn_benchmark
     
-    # ckpt = torch.load(os.path.join(args.output_dir, 'checkpoint_val.pt'%id), map_location=lambda storage, loc: storage)
     
-    ckpt = torch.load(os.path.join(args.output_dir, args.latest_checkpoint_file), map_location=lambda storage, loc: storage)
+    ckpt = torch.load(os.path.join(args.output_dir, args.ckpt_dir), map_location=lambda storage, loc: storage)
     model.cuda()
     model.eval()
 
@@ -307,18 +277,14 @@ def test():
     raw_data_dir = source_test_dir
     raw_data_dir_list = sorted(glob(raw_data_dir+"/*.nii.gz"))
     raw_mip_dir_list = sorted(glob(mip_img_test_dir+"/*.nii.gz"))
-    output_int_dir_new = output_int_dir+'/ckpt_%s/'%idx 
 
     for i, (raw_img_path, mip_path) in enumerate(tqdm(zip(raw_data_dir_list, raw_mip_dir_list))):
-        print(output_int_dir_new + raw_img_path.split('/')[-1])
+        print(output_int_dir + raw_img_path.split('/')[-1])
         # quit()
-        if os.path.exists(output_int_dir_new + raw_img_path.split('/')[-1]):
+        if os.path.exists(output_int_dir + raw_img_path.split('/')[-1]):
             continue
         Inference3D(raw_img_path, mip_path, output_int_dir_new)
     print('inference done!')   
 
 if __name__ == '__main__':
-    # if hp.train_or_test == 'train':
-    #     train()
-    # elif hp.train_or_test == 'test':
     test()
